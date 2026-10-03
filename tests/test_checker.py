@@ -100,6 +100,57 @@ def test_missing_referenced_file_fails_even_with_expression():
     assert is_problem(check)
 
 
+def test_ref_matching_is_explicit_not_basename():
+    # A License-File ref must resolve to the dist-info/licenses location;
+    # an unrelated same-basename file elsewhere must NOT satisfy it.
+    meta = make_meta([
+        "License-Expression: MIT",
+        "License-File: LICENSE",
+    ])
+    names = [
+        "demo-1.0.dist-info/METADATA",
+        "demo-1.0.dist-info/licenses/LICENSE",
+        "src/LICENSE",  # decoy: same basename, wrong location
+    ]
+    check = check_dist("x", meta, names)
+    assert check.verdict == LICENSE_OK
+    assert check.missing_refs == []
+    # ...but without the dist-info copy, the decoy alone does not satisfy it
+    check2 = check_dist("x", meta, [
+        "demo-1.0.dist-info/METADATA",
+        "src/LICENSE",
+    ])
+    assert check2.verdict == LICENSE_FILE_MISSING
+
+
+def test_ref_matching_in_sdist_uses_top_dir():
+    meta = make_meta([
+        "License-Expression: MIT",
+        "License-File: licenses/MIT.txt",
+    ])
+    names = [
+        "demo-1.0/PKG-INFO",
+        "demo-1.0/licenses/MIT.txt",
+        "demo-1.0/src/demo/__init__.py",
+    ]
+    check = check_dist("x", meta, names, flavor="sdist")
+    assert check.verdict == LICENSE_OK
+    assert check.missing_refs == []
+
+
+def test_ref_path_traversal_never_matches():
+    meta = make_meta([
+        "License-Expression: MIT",
+        "License-File: ../LICENSE",
+    ])
+    names = [
+        "demo-1.0.dist-info/METADATA",
+        "demo-1.0.dist-info/licenses/LICENSE",
+    ]
+    check = check_dist("x", meta, names)
+    assert check.verdict == LICENSE_FILE_MISSING
+
+
 def test_license_file_glob_matching():
     meta = make_meta(["License-Expression: MIT", "License-File: LICENSE*"])
     names = ["demo-1.0.dist-info/METADATA", "demo-1.0.dist-info/LICENSE.txt"]
