@@ -47,7 +47,8 @@ license it's under?).
 ## Quickstart
 
 ```bash
-pip install licenseproof
+pip install licenseproof  # PyPI upload pending rate limits; from source meanwhile:
+# git clone https://github.com/hahahahahahahahah6/licenseproof && pip install ./licenseproof
 licenseproof check --wheel dist/mypackage-1.0-py3-none-any.whl
 ```
 
@@ -72,7 +73,7 @@ Exit codes: `0` clean, `1` problems found, `2` errors (unreadable artifact, bad 
 
 | Verdict | Meaning | Fails? |
 |---|---|---|
-| `LICENSE_OK` | SPDX `License-Expression` present; any `License-File` references exist in the dist | no |
+| `LICENSE_OK` | a `License-Expression` field is present (presence only — the expression is not semantically validated against the SPDX list); any `License-File` references exist in the dist | no |
 | `LEGACY_LICENSE` | only old-style license info — free-text `License:` field, trove classifiers, and/or undeclared license text files; no `License-Expression` | only with `--require-spdx` |
 | `MISSING_LICENSE` | no license metadata *and* no license text files in the dist | yes |
 | `LICENSE_FILE_MISSING` | `License-File` metadata references files absent from the dist | yes |
@@ -84,17 +85,20 @@ Design notes:
   `--require-spdx` is the strict mode for projects that have decided to move.
 - A `License:` field containing `UNKNOWN` (or blank) counts as absent —
   that's setuptools' default, not information.
-- `License-File` globs are matched leniently (full path, basename, trailing
-  suffix): PEP 639 values are project-root-relative while wheels store files
-  under `*.dist-info/licenses/`.
+- `License-File` values are matched explicitly by layout: wheels/installed
+  dists expect them under `*.dist-info/licenses/` (PEP 639) or legacy
+  `*.dist-info/`; sdists expect them project-root-relative under the top-level
+  `<name>-<version>/` directory. No basename-only fallbacks, no `..` escapes.
 - An unparseable situation is never a silent pass: a `License-File`
   reference that matches nothing is its own failing verdict, not ignored.
 
 ## What licenseproof does not verify
 
 It checks the *presence and machine-readability* of license information, not
-its meaning. It does not interpret license compatibility (can MIT depend on
-GPL?), validate that an SPDX expression is a real SPDX identifier, or offer
+its meaning. A passing result confirms that the expected license metadata
+fields and referenced files are present — `License-Expression` is checked for
+presence, but SPDX identifiers and expressions are not semantically validated.
+It does not interpret license compatibility (can MIT depend on GPL?) or offer
 any legal interpretation. For "what does this license obligate me to do",
 use a real compliance tool — licenseproof just makes sure the artifact gives
 that tool something to work with.
