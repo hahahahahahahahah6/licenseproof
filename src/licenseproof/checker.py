@@ -43,27 +43,36 @@ def _present(value: str | None) -> str | None:
     return v
 
 
-def _ref_matches(pattern: str, names: list[str]) -> bool:
-    """Does a License-File glob match any archive member?
+def _ref_matches(pattern: str, names: list[str], flavor: str) -> bool:
+    """Does a PEP 639 License-File value resolve to an archive member?
 
-    PEP 639 values are project-root-relative (e.g. ``LICENSE`` or
-    ``licenses/*``), while wheels store them under ``*.dist-info/licenses/``,
-    so the pattern is tried against the full member name, the basename, and
-    any trailing path suffix.
+    Values are project-root-relative. Wheels store them under
+    ``<dist>.dist-info/licenses/`` (PEP 639) or, legacy-style, directly under
+    ``<dist>.dist-info/``; sdists keep them project-root-relative under the
+    top-level ``<name>-<version>/`` directory. Matching is explicit --
+    no basename-only fallbacks that could match an unrelated file.
     """
-    pat = pattern.strip().lstrip("./")
-    candidates = [pat, "*/" + pat]
-    for n in names:
-        base = n.rsplit("/", 1)[-1]
-        if not base:
-            continue
-        if any(fnmatch.fnmatch(n, c) or fnmatch.fnmatch(base, c) for c in candidates):
-            return True
-    return False
+    raw = pattern.strip()
+    if not raw or raw.startswith("/") or ".." in raw.split("/"):
+        return False
+    pat = raw.lstrip("./")
+    if not pat:
+        return False
+    if flavor == "sdist":
+        tops = {n.split("/", 1)[0] for n in names if "/" in n}
+        candidates = [f"{t}/{pat}" for t in tops] if tops else [pat]
+    else:  # wheel or installed: dist-info layout
+        candidates = [f"*.dist-info/licenses/{pat}", f"*.dist-info/{pat}"]
+    return any(fnmatch.fnmatchcase(n, c) for n in names for c in candidates)
 
 
-def check_dist(source: str, meta: Message, names: list[str]) -> LicenseCheck:
-    """Evaluate one artifact's license metadata and files. Pure function."""
+def check_dist(source: str, meta: Message, names: list[str],
+               flavor: str = "wheel") -> LicenseCheck:
+    """Evaluate one artifact's license metadata and files. Pure function.
+
+    flavor is "wheel", "sdist", or "installed" -- it controls where
+    License-File references are expected to resolve.
+    """
     check = LicenseCheck(source=source)
     check.license_expression = _present(meta.get("License-Expression"))
     check.license_text = _present(meta.get("License"))
@@ -75,7 +84,7 @@ def check_dist(source: str, meta: Message, names: list[str]) -> LicenseCheck:
     ]
     check.license_files_found = find_license_files(names)
     check.missing_refs = [
-        r for r in check.license_file_refs if not _ref_matches(r, names)
+        r for r in check.license_file_refs if not _ref_matches(r, names, flavor)
     ]
 
     if check.missing_refs:
@@ -87,6 +96,9 @@ def check_dist(source: str, meta: Message, names: list[str]) -> LicenseCheck:
             + ", ".join(repr(r) for r in check.missing_refs)
         )
     elif check.license_expression:
+        # NOTE: presence only -- the expression is NOT semantically validated
+        # against the SPDX license list. LICENSE_OK means "a License-Expression
+        # field exists", not "the expression is valid SPDX".
         check.verdict = LICENSE_OK
         if check.license_file_refs:
             check.detail = (
