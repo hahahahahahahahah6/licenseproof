@@ -71,18 +71,18 @@ def cmd_check(args: argparse.Namespace) -> int:
     try:
         if args.wheel:
             meta, names = read_wheel(args.wheel)
-            source = args.wheel
+            source, flavor = args.wheel, "wheel"
         elif args.sdist:
             meta, names = read_sdist(args.sdist)
-            source = args.sdist
+            source, flavor = args.sdist, "sdist"
         else:
             meta, names = read_installed(args.package)
-            source = f"installed:{args.package}"
+            source, flavor = f"installed:{args.package}", "installed"
     except DistReadError as exc:
         print(f"licenseproof: error: {exc}", file=sys.stderr)
         return 2
 
-    check = check_dist(source, meta, names)
+    check = check_dist(source, meta, names, flavor)
     if args.format == "json":
         print(json.dumps(check_to_dict(check), indent=2))
     else:
